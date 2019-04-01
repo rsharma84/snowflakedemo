@@ -1,0 +1,278 @@
+/* Feel free to share this script, however please keep the creator names in the markup
+Created By: Slalom Consulting - Ricky Sharma (ricky.sharma@slalom.com)
+*/
+
+
+--******************************************************************************************************************
+--*************************************** ADMIN COMMANDS STARTS HERE ***********************************************
+--******************************************************************************************************************
+
+
+    -- USE ACCOUNT ADMIN ROLE TO CREATE A NEW DATABASE FOR THIS TRAINING. THIS DB WILL BE SHARED BY ALL USERS TODAY
+        USE ROLE ACCOUNTADMIN;
+
+	-- CREATE A NEW ROLE FOR TRAINEES
+		CREATE ROLE "NYC_TEMP" COMMENT = 'NYC 0 to 90 Snowflake Training Role for external customers';
+		GRANT ROLE "NYC_TEMP" TO ROLE "SYSADMIN";
+
+-- 		  use role NYC_TEMP;
+--        USE ROLE SYSADMIN;
+        GRANT CREATE WAREHOUSE on account to  NYC_TEMP;
+
+        CREATE DATABASE NYC_0_TO_90_2019;
+    
+    -- GRANT PRIVELEDGES FOR USERS TO CREATE THEIR OWN SCHEMA OR TABLES WITHIN THIS NEW DB
+        GRANT ALL ON DATABASE NYC_0_TO_90_2019 TO ROLE NYC_TEMP;  
+        GRANT ALL ON SCHEMA NYC_0_TO_90_2019.TRAINING TO ROLE NYC_TEMP;        
+		
+    -- Create INTERNAL Stage
+        CREATE STAGE NYC_0_To_90_Training_2019_STAGE;
+        
+        Use database NYC_0_TO_90_2019;
+        USE Schema TRAINING;
+        list @NYC_0_To_90_Training_2019_STAGE; -- no files found yet
+        -- Grant Read / write access to this stage from UI / using a command
+
+    --  (to put files from local to Snowflake internal stage – run below command.. since I am already in directory where my files are – I just will do file:// )
+
+      -------- OPEN CMD TO COPY THE FILE FROM LOCAL INTO SNOWFLAKE STAGE -----
+            C:\Users\Ricky.Sharma> cd C:\Users\ricky.sharma\OneDrive - Slalom\Share-Docs_NEW\Snowflake\0-to-90-Workshop\
+            C:\Users\Ricky.Sharma\Desktop\Share-Docs\Snowflake\0-to-90-Workshop>snowsql -a <type account name> -u <type userid>
+            Password: <type password>
+            USE ROLE NYC_ROLE;
+            Use database NYC_0_TO_90_2019;
+            USE Schema TRAINING;
+            Use warehouse NYC_0_To_90_Training_2019 ;
+            list @nyc_0_to_90_training_2019_stage;
+--            rm @nyc_0_to_90_training_2019_stage/sales.json.gz;
+            put file://Hotel_Transations.csv @NYC_0_To_90_Training_2019_STAGE;
+            put file://sales.json @NYC_0_To_90_Training_2019_STAGE;
+            put file://*.csv @NYC_0_To_90_Training_2019_STAGE;
+      ----- EXIT FROM CMD AND COME BACK TO SNOWFLAKE WEB UI  */
+
+
+      -- Check that the file/s are copied into Snowflake Stage
+            List @NYC_0_TO_90_2019.TRAINING.NYC_0_To_90_Training_2019_STAGE;
+
+
+
+
+
+
+--******************************************************************************************************************
+--***************************************** USER COMMANDS STARTS HERE **********************************************
+--******************************************************************************************************************
+
+
+--=====================================================================
+-- EXERCISE1: LAODING A STRUCTURED DATASET INTO SNOWFLAKE FOR ANALYSIS
+--=====================================================================
+
+    -- WE ALL WILL SHARE SAME DATABASE AND EACH USER WILL CREATE THEIR OWN SCHEMA, WAREHOUSE, TABLE, FILE FORMAT AND PEFORM DATA LOADING
+        USE ROLE NYC_TEMP;
+  
+    -- BELOW VARIABLES WILL HELP YOU EASILY ASSOCIATE YOUR OBJECTS BY USING YOUR SNOWFLAKE USERID
+        SET Current_User = CURRENT_USER();
+        SET Current_DB = 'NYC_0_TO_90_2019'; 
+        SET Current_schema = 'BATCH_' || $Current_User; 
+   --     SET Current_stage = 'NYC_TRN_STG_' || $Current_User;
+        SET Current_FF = 'FF_CSV_' || $Current_User;
+        SET Current_FF_JSON = 'FF_JSON_' || $Current_User;
+        SET Current_WH = 'NYC_TRN_' || $Current_User;
+
+
+        USE Database IDENTIFIER($Current_DB);
+    -- Create a new schema.. eg. BATCH_RICKYSHARMA
+        Create Schema IDENTIFIER($Current_schema)   COMMENT = 'Test Schema for Snowflake 0 to 90 Training';
+        USE Schema IDENTIFIER($Current_schema);
+
+    -- Optional: Execute grants if user groups operate in different roles and need access to your data
+        GRANT ALL ON Schema IDENTIFIER($Current_schema) TO ROLE NYC_TEMP;  
+    
+    
+    -- CREATE A NEW WAREHOUSE. Eg; NYC_TRN_RICKYSHARMA
+        CREATE WAREHOUSE IDENTIFIER($Current_WH) WITH WAREHOUSE_SIZE = 'XSMALL' WAREHOUSE_TYPE = 'STANDARD' 
+            AUTO_SUSPEND = 300 AUTO_RESUME = TRUE MIN_CLUSTER_COUNT = 1 MAX_CLUSTER_COUNT = 2 SCALING_POLICY = 'ECONOMY' 
+            COMMENT = 'Warehouse for 0 to 90 training at NYC';
+
+
+    -- CREATE A NEW FILE FORMAT FOR LOADING CSV FILES THAT ARE TAB DELIMITED AND HAVE COLUMN HEADERS. 
+    -- Eg: FF_CSV_RICKYSHARMA
+        CREATE FILE FORMAT IDENTIFIER($Current_FF) TYPE = 'CSV' COMPRESSION = 'AUTO' FIELD_DELIMITER = '\t'
+            RECORD_DELIMITER = '\n' SKIP_HEADER = 1 FIELD_OPTIONALLY_ENCLOSED_BY = 'NONE' TRIM_SPACE = TRUE 
+            ERROR_ON_COLUMN_COUNT_MISMATCH = TRUE ESCAPE = 'NONE' ESCAPE_UNENCLOSED_FIELD = '\134' DATE_FORMAT = 'AUTO' 
+            TIMESTAMP_FORMAT = 'AUTO' NULL_IF = ('\\N');
+
+
+    -- CREATE A NEW TABLE FOR HOTEL TRANSACTIONS DATASET
+      Create or Replace Table Hotel_Transactions  -- provide your table name here
+          (
+          key integer,
+          total_bill decimal(10,2),
+          tip decimal(10,2),
+          sex varchar,
+          smoker varchar,
+          meal_day varchar,
+          meal_type varchar,
+          count integer
+          );
+
+
+    -- PICK A WAREHOUSE TO BE USED FOR DATA LOADING AND ANALYSIS
+        Use warehouse IDENTIFIER($Current_WH) ;
+
+
+    -------------------------- DATA LOADING ------------------------------------
+
+    -- OPTION 1: LOAD THE FILE FROM LOCAL TO SNOWFLAKE TABLE USING UI
+
+    -- OPTION 2: LOAD THE FILE FROM SNOWFLAKE STAGE INTO THE TABLE. THE FILE WAS COPIED TO STAGE BY ADMIN SCRIPTS SHARED ABOVE
+        Copy into Hotel_Transactions from @NYC_0_TO_90_2019.TRAINING.nyc_0_to_90_training_2019_stage/Hotel_Transations.csv.gz
+            file_format= $Current_FF;
+
+
+
+    -------------------------- DATA ANALYSIS ------------------------------------
+
+    -- Query the Data
+        Select * from Hotel_Transactions limit 100;
+
+    -- Identify Average Bill Vs Avg. Tips
+      Select 
+        Avg(TOTAL_BILL) As Avg_Bill , 
+        Avg(Tip) as Avg_Tip, 
+        Avg_Tip / Avg_Bill * 100 As Percentage_Tip
+        FROM  Hotel_Transactions;
+
+    -- Analyze Maximum and Minimum tips Vs Bills for each Gender and Meal Type
+      Select 
+        Meal_type, sex, 
+        max(TOTAL_BILL) As max_Total_bill,
+        min(TOTAL_BILL) As min_Total_bill,
+        max(TIP) As max_TIP,
+        min(TIP) As min_TIP
+        FROM  Hotel_Transactions Group by Meal_type, sex;
+    
+
+    -- Identify maximum Bill per meal day
+      Select
+          max(total_bill) as max_total_bill, meal_day
+          FROM  Hotel_Transactions Group by meal_day order by max_total_bill desc; 
+
+
+
+    ---------------------- EXPLORE UNIQUE SNOWFLAKE FEATURES ----------------------------
+   
+        -- Accidently DROP this table!!
+          DROP table  Hotel_Transactions;
+
+        -- Recover dropped table back
+          UNDROP table Hotel_Transactions;
+          Select * from Hotel_Transactions;
+
+
+        -- Clone this table into a new table - without replicating data
+          CREATE  TABLE Hotel_Transactions_NEW CLONE  Hotel_Transactions;
+          Select * from Hotel_Transactions_NEW;
+
+        -- Update Column Count by adding 5 to its current value
+          Update  Hotel_Transactions Set Count = count + 5;
+          Select * from Hotel_Transactions;
+
+        -- Now, Use time travel feature to look at the previous state of this data.. 1 mins ago
+          Select * from Hotel_Transactions at(offset => -60*1);
+
+
+
+
+
+
+
+
+--===============================================================================
+-- EXERCISE2: LAODING A SEMI-STRUCTURED (JSON) DATASET INTO SNOWFLAKE FOR ANALYSIS
+--================================================================================
+
+    -- Create File format for JSON Dataset
+        CREATE FILE FORMAT IDENTIFIER($Current_FF_JSON) TYPE = 'JSON' COMPRESSION = 'AUTO' 
+                ENABLE_OCTAL = FALSE ALLOW_DUPLICATE = FALSE STRIP_OUTER_ARRAY = FALSE STRIP_NULL_VALUES = TRUE IGNORE_UTF8_ERRORS = TRUE;
+  
+  
+    /* Create a target table for the JSON data. The table is temporary, meaning it persists only for the duration
+    of the user session and is not visible to other users. */
+
+      Create or replace temporary table home_sales_temp
+      (col1 variant);
+      
+    /* Create a Structured Table to store parsed JSON data into a columnar format */
+      Create or replace table home_sales (
+        city string,
+        zip string,
+        state string,
+        type string default 'Residential',
+        sale_date timestamp_ntz,
+        price string
+        );
+  
+
+  
+    -- PICK A WAREHOUSE TO BE USED FOR DATA LOADING AND ANALYSIS
+       Use warehouse IDENTIFIER($Current_WH) ;
+
+
+
+    -------------------------- DATA LOADING ------------------------------------
+
+    -- OPTION 1: LOAD THE FILE FROM LOCAL TO SNOWFLAKE TABLE USING UI
+
+    -- OPTION 2: LOAD THE FILE FORM STAGE INTO THE TABLE
+      Copy into home_sales_temp from @NYC_0_TO_90_2019.TRAINING.nyc_0_to_90_training_2019_stage/sales.json
+      file_format= $Current_FF_JSON;
+  
+  
+    -- QUERY THE LOADED DATA (STILL JSON)
+      Select * from home_sales_temp;
+  
+  
+    -- CONVERT JSON INTO A STRUCTURED FORMAT AND LOAD INTO A STRUCTURED TABLE 
+        INSERT INTO home_sales (city, state, zip, sale_date, price)
+        select substr(col1:location.state_city,4), 
+              substr(col1:location.state_city,1,2), 
+              col1:location.zip, 
+              to_timestamp_ntz(col1:sale_date), 
+              col1:price
+         From home_sales_temp;
+   
+    -- QUERY THE LOADED DATA (Structured format)
+       Select * from home_sales;
+   
+   
+   
+
+
+
+
+
+
+
+
+--===============================================================================
+-- EXERCISE3: REVIEW WAREHOUSE SIZE EFFECTS TO PERFORMANCE
+--================================================================================
+
+-- Total Sales / Year / Customer's Country	
+		select d.D_YEAR, COUNTRY.COUNTRY_NAME, SUM(SS_QUANTITY) as Total_Quantity,SuM(SS_NET_PROFIT) as Total_Profit, SUM(SS_SALES_PRICE)as Total_Sales_Price, AVG(SS_SALES_PRICE) as Avg_Sales_Price,
+		AVG(SS_NET_PROFIT) as Average_Profit
+		 from SNOWFLAKE_NYC_POV_DM2.PUBLIC.STORE_SALES a
+		INNER JOIN SNOWFLAKE_NYC_POV_DM2.PUBLIC.DATE_DIM d on a.SS_SOLD_DATE_SK = D_DATE_SK
+		INNER JOIN SNOWFLAKE_NYC_POV_DM2.PUBLIC.CUSTOMER c on a.SS_CUSTOMER_SK = c.C_CUSTOMER_SK
+		LEFT JOIN SNOWFLAKE_NYC_POV_DM2.PUBLIC.COUNTRY on c.COUNTRY_ID = COUNTRY.ID
+		Group by d.D_YEAR, COUNTRY.COUNTRY_NAME
+		;
+  
+  
+  
+  
+  
+  
+  
